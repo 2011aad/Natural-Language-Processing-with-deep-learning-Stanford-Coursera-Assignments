@@ -100,10 +100,21 @@ def pad_sequences(data, max_length):
     # Use this zero vector when padding sequences.
     zero_vector = [0] * Config.n_features
     zero_label = 4 # corresponds to the 'O' tag
-
+    
     for sentence, labels in data:
         ### YOUR CODE HERE (~4-6 lines)
-        pass
+	mask = [True] * max_length
+        if len(sentence) >= max_length:
+	    tmp_sen = sentence[0:max_length]
+	    tmp_labels = labels[0:max_length]
+	else:
+	    tmp_sen = list(sentence)
+	    tmp_labels = list(labels)
+	    for i in range(len(tmp_sen), max_length):
+		tmp_sen.append(zero_vector)
+		tmp_labels.append(zero_label)
+		mask[i] = False
+	ret.append((tmp_sen, tmp_labels, mask))
         ### END YOUR CODE ###
     return ret
 
@@ -141,6 +152,10 @@ class RNNModel(NERModel):
         (Don't change the variable names)
         """
         ### YOUR CODE HERE (~4-6 lines)
+	self.input_placeholder = tf.placeholder(tf.int32, (None, self.max_length, self.config.n_features))
+	self.labels_placeholder = tf.placeholder(tf.int32, (None, self.max_length))
+	self.mask_placeholder = tf.placeholder(tf.bool, (None, self.max_length))
+	self.dropout_placeholder = tf.placeholder(tf.float32)
         ### END YOUR CODE
 
     def create_feed_dict(self, inputs_batch, mask_batch, labels_batch=None, dropout=1):
@@ -166,6 +181,12 @@ class RNNModel(NERModel):
             feed_dict: The feed dictionary mapping from placeholders to values.
         """
         ### YOUR CODE (~6-10 lines)
+	feed_dict = {}
+	feed_dict[self.input_placeholder] = inputs_batch
+	feed_dict[self.mask_placeholder] = mask_batch
+	feed_dict[self.dropout_placeholder] = dropout
+	if labels_batch is not None:
+	    feed_dict[self.labels_placeholder] = labels_batch
         ### END YOUR CODE
         return feed_dict
 
@@ -190,6 +211,9 @@ class RNNModel(NERModel):
             embeddings: tf.Tensor of shape (None, max_length, n_features*embed_size)
         """
         ### YOUR CODE HERE (~4-6 lines)
+	params = tf.Variable(self.pretrained_embeddings)
+	embeddings_mat = tf.nn.embedding_lookup(params, self.input_placeholder)
+	embeddings = tf.reshape(embeddings_mat, (-1, self.config.max_length, self.config.n_features*self.config.embed_size))
         ### END YOUR CODE
         return embeddings
 
@@ -251,16 +275,28 @@ class RNNModel(NERModel):
         # Define U and b2 as variables.
         # Initialize state as vector of zeros.
         ### YOUR CODE HERE (~4-6 lines)
+	U = tf.Variable(tf.contrib.layers.xavier_initializer()((cell.state_size, self.config.n_classes)),dtype = tf.float32)
+	b2 = tf.Variable(tf.zeros((self.config.n_classes, )))
+
+	sample_size = tf.shape(x)[0]
+	h = tf.zeros((sample_size, cell.state_size))
         ### END YOUR CODE
 
         with tf.variable_scope("RNN"):
             for time_step in range(self.max_length):
                 ### YOUR CODE HERE (~6-10 lines)
-                pass
+		if time_step >= 1:
+		    tf.get_variable_scope().reuse_variables()
+		out, h = cell(x[:, time_step, :], h, scope="RNN")
+		out_drop = tf.nn.dropout(out, dropout_rate)
+		y = tf.matmul(out_drop, U) + b2
+
+		preds.append(y)
                 ### END YOUR CODE
 
         # Make sure to reshape @preds here.
         ### YOUR CODE HERE (~2-4 lines)
+	preds = tf.stack(preds, axis=1)
         ### END YOUR CODE
 
         assert preds.get_shape().as_list() == [None, self.max_length, self.config.n_classes], "predictions are not of the right shape. Expected {}, got {}".format([None, self.max_length, self.config.n_classes], preds.get_shape().as_list())
@@ -282,6 +318,10 @@ class RNNModel(NERModel):
             loss: A 0-d tensor (scalar)
         """
         ### YOUR CODE HERE (~2-4 lines)
+	masked_labels = tf.boolean_mask(self.labels_placeholder, self.mask_placeholder)
+	masked_preds = tf.boolean_mask(preds, self.mask_placeholder)
+	ce = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=masked_labels, logits=masked_preds)
+	loss= tf.reduce_mean(ce)
         ### END YOUR CODE
         return loss
 
@@ -305,6 +345,7 @@ class RNNModel(NERModel):
             train_op: The Op for training.
         """
         ### YOUR CODE HERE (~1-2 lines)
+	train_op = tf.train.AdamOptimizer(learning_rate=self.config.lr).minimize(loss)
         ### END YOUR CODE
         return train_op
 
