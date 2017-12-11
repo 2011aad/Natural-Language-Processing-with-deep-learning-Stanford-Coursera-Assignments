@@ -26,7 +26,7 @@ from q3_gru_cell import GRUCell
 from q2_rnn_cell import RNNCell
 
 #matplotlib.use('Agg')
-plt.switch_backend('agg')
+plt.switch_backend('agg')  #works for me when using google cloud without X-window
 logger = logging.getLogger("hw3.q3")
 logger.setLevel(logging.DEBUG)
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
